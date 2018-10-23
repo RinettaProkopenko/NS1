@@ -1,12 +1,7 @@
 ﻿using System;
-using System.Collections.Generic;
-using System.ComponentModel;
-using System.Data;
 using System.Drawing;
-using System.Linq;
-using System.Text;
-using System.Threading.Tasks;
 using System.Windows.Forms;
+using System.IO;
 
 namespace PerceptonProject
 {
@@ -15,11 +10,15 @@ namespace PerceptonProject
         int nCells = 20;
         int ht = 0;
         int wt = 0;
+        int x0 = 1;
         double h = 0.1;
         bool drawing = false;
         double[,] w;
+        double w0;
         int[,] x;
 
+
+        #region initial     
         public MainForm()
         {
             InitializeComponent();
@@ -32,6 +31,7 @@ namespace PerceptonProject
         private void InitW()
         {
             Random rand = new Random();
+            w0 = Convert.ToDouble(rand.Next(-5, 5)) / 10;
             for (int i = 0; i < nCells; i++)
                 for (int j = 0; j < nCells; j++)
                 {
@@ -39,6 +39,12 @@ namespace PerceptonProject
                 }
         }
 
+
+        private void MainForm_Resize(object sender, EventArgs e)
+        {
+            printGrid();
+        }
+        
         private void printGrid()
         {
             Bitmap bmp = new Bitmap(drawingField.Width, drawingField.Height);
@@ -72,7 +78,9 @@ namespace PerceptonProject
 
             drawingField.Image = bmp;
         }
+        #endregion
 
+        #region draw
         private void drawingField_MouseMove(object sender, MouseEventArgs e)
         {
             if (drawing)
@@ -81,13 +89,6 @@ namespace PerceptonProject
             }
         }
 
-        private int[] getMasCoordinates(int x, int y)
-        {
-            int[] res = new int[2];
-            res[0] = x - (x % wt);
-            res[1] = y - (y % ht);
-            return res;
-        }
 
         private void drawingField_MouseDown(object sender, MouseEventArgs e)
         {
@@ -109,6 +110,17 @@ namespace PerceptonProject
             drawingField.Image = img;
         }
 
+        private int[] getMasCoordinates(int x, int y)
+        {
+            int[] res = new int[2];
+            res[0] = x - (x % wt);
+            res[1] = y - (y % ht);
+            return res;
+        }
+
+        #endregion
+
+        #region buttons
         private void Clear_Click(object sender, EventArgs e)
         {
             printGrid();
@@ -116,23 +128,94 @@ namespace PerceptonProject
 
         private void Train_Click(object sender, EventArgs e)
         {
-            Image img = ResizePicture();
+            Bitmap img = ResizePicture();
+
             //считываем данные в таблицу
             readInputs();
-            //применяем алгоритм обучения
+            //вычисляем результат
+           int result = Answer();
             //задаем вопрос пользователю 
+            string q = result == 0 ? "Это нолик?" : "Это звездочка?";
+            DialogResult dialogResult = MessageBox.Show(q,"",MessageBoxButtons.YesNo);
             //если нет, производим корректировку весов
+            if (dialogResult == DialogResult.No)
+            {
+                int rightAns = q == "Это нолик?" ? 1 : 0;
+                int delta = rightAns - result;
+                ChangeW(delta);
+            }
+            
         }
 
-        private void readInputs()
+        private void Check_Click(object sender, EventArgs e)
         {
-            Bitmap bmp = new Bitmap(drawingField.Image);
-            for (int i = 0; i < nCells; i++)
-                for (int j = 0; j < nCells; j++)
-                    x[i, j] = bmp.GetPixel(i * wt, j * ht).ToArgb() == Color.Blue.ToArgb() ? 1 : 0;
+            Bitmap img = ResizePicture();
+            readInputs();
+            //запрашваем результат у перцептрона
+            int result = Answer();
+            //выдаем ответ пользователю
+            string ans = result == 0 ? "Это нолик!": "Это звездочка!";
+            MessageBox.Show(ans);
         }
 
-        private Image ResizePicture()
+        private void Save_Click(object sender, EventArgs e)
+        {
+            SaveFileDialog save = new SaveFileDialog();
+            //вызываем диалог сохранения файла
+            if (save.ShowDialog() == DialogResult.Cancel)
+                return;
+            string filename = save.FileName;
+            //записываем веса в файл
+            StreamWriter str = new StreamWriter(filename);
+            str.WriteLine(w0);
+            for (int i = 0; i < nCells; i++)
+            {
+                for(int j = 0; j< nCells; j++)
+                {
+                    str.Write(w[i, j] + " ");
+                }
+                str.WriteLine();
+            }
+            str.Close();
+            MessageBox.Show("Файл сохранен");
+        }
+
+        private void Load_Click(object sender, EventArgs e)
+        {
+            OpenFileDialog open = new OpenFileDialog();
+            if (open.ShowDialog() == DialogResult.Cancel)
+                return;
+            string filename = open.FileName;
+            StreamReader f = new StreamReader(filename);
+            string s;
+            string[] buf;
+            int i = 0;
+            //заполняем таблицу весов
+            s = f.ReadLine();
+            buf = s.Split(' ');
+
+            for (int j = 0; j < buf.Length; j++)
+            {
+                double t = Convert.ToDouble(buf[j]);
+                w0 = t;
+            }
+
+            while ((s = f.ReadLine()) != null)
+            {
+                buf = s.Split(' ');
+                for (int j = 0; j < nCells; j++)
+                {
+                    double t = Convert.ToDouble(buf[j]);
+                    w[i, j] = t;
+                }
+                i++;
+            }
+        }
+
+        #endregion
+
+        #region algoritm
+        private Bitmap ResizePicture()
         {
             Bitmap bmp = (Bitmap)drawingField.Image;
 
@@ -231,39 +314,35 @@ namespace PerceptonProject
                     nj++;
                 }
 
-
-
             //возвращаем полученное изображение
-            drawingField.Image = nBmp;
+            //drawingField.Image = nBmp;
             return nBmp;
         }
 
-        private void MainForm_Resize(object sender, EventArgs e)
+        private void readInputs()
         {
-            printGrid();
+            Bitmap bmp = new Bitmap(drawingField.Image);
+            for (int i = 0; i < nCells; i++)
+                for (int j = 0; j < nCells; j++)
+                    x[i, j] = bmp.GetPixel(i * wt, j * ht).ToArgb() == Color.Blue.ToArgb() ? 1 : 0;
         }
 
-        private void Check_Click(object sender, EventArgs e)
+        int Answer()
         {
-            //запрашваем результат у перцептрона
-            //выдаем ответ пользователю
+            double s = w0 * x0;
+            for (int i = 0; i < nCells; i++)
+                for (int j = 0; j < nCells; j++)
+                    s += w[i, j] * x[i, j];
+            return s >= 0 ? 1 : 0;
         }
 
-        private void Save_Click(object sender, EventArgs e)
+        void ChangeW(int delta)
         {
-            //вызываем диалог сохранения файла
-            //записываем веса в файл
+            w0 = w0 + h * delta * x0;
+            for (int i = 0; i < nCells; i++)
+                for (int j = 0; j < nCells; j++)
+                    w[i, j] = w[i, j] + h * delta * x[i, j];
         }
-
-        private void Load_Click(object sender, EventArgs e)
-        {
-            //вызываем диалог открытия файла
-            //заполняем таблицу весов
-        }
-
-        private void drawingField_Click(object sender, EventArgs e)
-        {
-
-        }
+        #endregion
     }
 }
